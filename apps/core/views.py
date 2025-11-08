@@ -69,23 +69,23 @@ def dashboard(request):
     ).count()
     
     # ============ FINANCIAL STATISTICS ============
-    # Payments this month
+    # Payments this month (all payments with invoices)
     payments_month = Payment.objects.filter(
         payment_date__gte=first_day_month,
-        status='completed'
+        invoice__isnull=False
     ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
     
     # Total revenue (all time)
     total_revenue = Payment.objects.filter(
-        status='completed'
+        invoice__isnull=False
     ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
     
-    # Pending payments
-    pending_payments = Payment.objects.filter(
-        status='pending'
-    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    # Invoices pending payment
+    pending_invoices = Invoice.objects.filter(
+        status='issued'
+    ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
     
-    # Sales revenue
+    # Sales revenue (using contract payments)
     sales_revenue = SalesPayment.objects.filter(
         status='completed'
     ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
@@ -131,10 +131,11 @@ def dashboard(request):
         end_date__gte=today
     ).select_related('property', 'client')[:5]
     
-    overdue_payments = Payment.objects.filter(
-        status='pending',
-        payment_date__lt=today
-    ).select_related('invoice')[:5]
+    # Overdue invoices (issued but not paid)
+    overdue_invoices = Invoice.objects.filter(
+        status='issued',
+        issue_date__lt=today - timedelta(days=30)
+    )[:5]
     
     # ============ CHART DATA ============
     # Properties by Type (Pie Chart)
@@ -162,7 +163,7 @@ def dashboard(request):
         month_revenue = Payment.objects.filter(
             payment_date__gte=month_start,
             payment_date__lte=month_end,
-            status='completed'
+            invoice__isnull=False
         ).aggregate(total=Sum('amount'))['total'] or 0
         revenue_trend_labels.append(month_start.strftime('%b %Y'))
         revenue_trend_data.append(float(month_revenue))
@@ -209,7 +210,7 @@ def dashboard(request):
         # Financial
         'total_revenue': total_revenue,
         'payments_month': payments_month,
-        'pending_payments': pending_payments,
+        'pending_payments': pending_invoices,
         'sales_revenue': sales_revenue,
         
         # Recent Activities
@@ -219,7 +220,7 @@ def dashboard(request):
         
         # Alerts
         'contracts_expiring_7days': contracts_expiring_7days,
-        'overdue_payments': overdue_payments,
+        'overdue_invoices': overdue_invoices,
         
         # Notifications
         'unread_notifications': Notification.objects.filter(user=request.user, is_read=False).count(),

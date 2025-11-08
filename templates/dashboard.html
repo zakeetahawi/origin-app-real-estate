@@ -477,18 +477,14 @@
                         <div class="list-group-item">
                             <div class="d-flex justify-content-between align-items-center">
                                 <div>
-                                    <h6 class="mb-1">Payment #{{ payment.id }}</h6>
+                                    <h6 class="mb-1">{{ payment.payment_number }}</h6>
                                     <small class="text-muted">
                                         {{ payment.payment_method|title }} | {{ payment.payment_date|date:"M d, Y" }}
                                     </small>
                                 </div>
                                 <div class="text-end">
                                     <h5 class="mb-0 text-success">EGP {{ payment.amount|floatformat:0 }}</h5>
-                                    {% if payment.status == 'completed' %}
                                     <span class="badge bg-success">Paid</span>
-                                    {% else %}
-                                    <span class="badge bg-warning">{{ payment.get_status_display }}</span>
-                                    {% endif %}
                                 </div>
                             </div>
                         </div>
