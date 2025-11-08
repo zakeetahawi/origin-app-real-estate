@@ -1,5 +1,5 @@
 """
-URL configuration for Core app - Notifications
+URL configuration for Core app - Notifications & Dashboard
 """
 from django.urls import path
 from . import views
@@ -7,6 +7,9 @@ from . import views
 app_name = 'core'
 
 urlpatterns = [
+    # Dashboard
+    path('', views.dashboard, name='dashboard'),
+    
     # Notification URLs
     path('notifications/', views.notification_list, name='notification_list'),
     path('notifications/<int:pk>/read/', views.notification_mark_as_read, name='notification_mark_as_read'),

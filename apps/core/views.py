@@ -1,13 +1,40 @@
 """
-Views for Core app - Notifications
+Views for Core app - Notifications & Dashboard
 """
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.core.paginator import Paginator
 from django.db.models import Q
+from django.utils import timezone
+from datetime import timedelta
 from .models import Notification
 from .services import NotificationService
+
+
+@login_required
+def dashboard(request):
+    """
+    Main dashboard for the application
+    """
+    from apps.properties.models import Property
+    from apps.contracts.models import Contract
+    from apps.maintenance.models import MaintenanceRequest
+    from apps.sales.models import SalesContract, Reservation
+    
+    # Get statistics
+    today = timezone.now().date()
+    
+    context = {
+        'total_properties': Property.objects.count(),
+        'active_contracts': Contract.objects.filter(status='active').count(),
+        'pending_maintenance': MaintenanceRequest.objects.filter(status='pending').count(),
+        'unread_notifications': Notification.objects.filter(user=request.user, is_read=False).count(),
+        'total_sales': SalesContract.objects.filter(status='active').count(),
+        'pending_reservations': Reservation.objects.filter(status='pending').count(),
+    }
+    
+    return render(request, 'dashboard.html', context)
 
 
 @login_required
