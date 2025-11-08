@@ -40,6 +40,70 @@
     </div>
 </div>
 
+<!-- Quick Actions - Advanced Features -->
+<div class="card mb-4 border-primary">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="fas fa-bolt me-2"></i>Advanced Features & Reports</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <!-- Gallery -->
+            <div class="col-md-4 col-lg-2">
+                <a href="{% url 'properties:gallery' property.pk %}" class="btn btn-outline-primary w-100">
+                    <i class="fas fa-images fa-2x mb-2 d-block"></i>
+                    <small>Gallery</small>
+                    {% if images %}
+                    <br><span class="badge bg-primary">{{ images.count }}</span>
+                    {% endif %}
+                </a>
+            </div>
+            
+            <!-- Financial Report -->
+            <div class="col-md-4 col-lg-2">
+                <a href="{% url 'properties:financial_report' property.pk %}" class="btn btn-outline-success w-100">
+                    <i class="fas fa-chart-line fa-2x mb-2 d-block"></i>
+                    <small>Financial</small>
+                </a>
+            </div>
+            
+            <!-- Occupancy History -->
+            <div class="col-md-4 col-lg-2">
+                <a href="{% url 'properties:occupancy_history' property.pk %}" class="btn btn-outline-info w-100">
+                    <i class="fas fa-calendar-alt fa-2x mb-2 d-block"></i>
+                    <small>Occupancy</small>
+                    {% if contracts %}
+                    <br><span class="badge bg-info">{{ contracts.count }}</span>
+                    {% endif %}
+                </a>
+            </div>
+            
+            <!-- Maintenance History -->
+            <div class="col-md-4 col-lg-2">
+                <a href="{% url 'properties:maintenance_history' property.pk %}" class="btn btn-outline-warning w-100">
+                    <i class="fas fa-tools fa-2x mb-2 d-block"></i>
+                    <small>Maintenance</small>
+                </a>
+            </div>
+            
+            <!-- Property Dashboard -->
+            <div class="col-md-4 col-lg-2">
+                <a href="{% url 'properties:dashboard' %}" class="btn btn-outline-secondary w-100">
+                    <i class="fas fa-tachometer-alt fa-2x mb-2 d-block"></i>
+                    <small>Dashboard</small>
+                </a>
+            </div>
+            
+            <!-- Compare -->
+            <div class="col-md-4 col-lg-2">
+                <a href="{% url 'properties:comparison' %}?properties={{ property.pk }}" class="btn btn-outline-dark w-100">
+                    <i class="fas fa-exchange-alt fa-2x mb-2 d-block"></i>
+                    <small>Compare</small>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-lg-8">
         <div class="card mb-4">
