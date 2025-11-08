@@ -15,72 +15,224 @@ from .services import NotificationService
 @login_required
 def dashboard(request):
     """
-    Main dashboard for the application with comprehensive statistics
+    Modern Professional Dashboard with Real Data
     """
     from apps.properties.models import Property
-    from apps.contracts.models import Contract
+    from apps.contracts.models import Contract, ContractPayment
     from apps.maintenance.models import MaintenanceRequest
-    from apps.sales.models import SalesContract, PropertyReservation
+    from apps.sales.models import SalesContract, PropertyReservation, SalesPayment
     from apps.clients.models import Client
     from apps.owners.models import Owner
-    from django.db.models import Count
+    from apps.financial.models import Payment, Invoice
+    from django.db.models import Count, Sum, Q, Avg
+    from decimal import Decimal
     import json
     
-    # Get statistics
+    # Date ranges
     today = timezone.now().date()
+    first_day_month = today.replace(day=1)
+    last_30_days = today - timedelta(days=30)
+    last_7_days = today - timedelta(days=7)
     
-    # Properties stats
-    total_properties = Property.objects.count()
-    available_properties = Property.objects.filter(status='available').count()
-    rented_properties = Property.objects.filter(status='rented').count()
+    # ============ PROPERTIES STATISTICS ============
+    properties_qs = Property.objects.all()
+    total_properties = properties_qs.count()
+    available_properties = properties_qs.filter(status='available').count()
+    rented_properties = properties_qs.filter(status='rented').count()
+    under_maintenance = properties_qs.filter(status='maintenance').count()
+    sold_properties = properties_qs.filter(is_for_sale=True).count()
     
-    # Contracts stats
-    total_contracts = Contract.objects.count()
-    active_contracts = Contract.objects.filter(status='active').count()
+    # Properties by type
+    property_types_data = properties_qs.values('property_type__name').annotate(
+        count=Count('id')
+    ).order_by('-count')[:6]
     
-    # Maintenance stats
-    pending_maintenance = MaintenanceRequest.objects.filter(status='pending').count()
-    in_progress_maintenance = MaintenanceRequest.objects.filter(status='in_progress').count()
+    # Properties by city
+    properties_by_city = properties_qs.values('city').annotate(
+        count=Count('id')
+    ).order_by('-count')[:5]
     
-    # Clients & Owners
+    # ============ CONTRACTS STATISTICS ============
+    contracts_qs = Contract.objects.all()
+    total_contracts = contracts_qs.count()
+    active_contracts = contracts_qs.filter(status='active').count()
+    expired_contracts = contracts_qs.filter(status='expired').count()
+    expiring_soon = contracts_qs.filter(
+        status='active',
+        end_date__lte=today + timedelta(days=30),
+        end_date__gte=today
+    ).count()
+    
+    # Contracts created this month
+    new_contracts_month = contracts_qs.filter(
+        created_at__gte=first_day_month
+    ).count()
+    
+    # ============ FINANCIAL STATISTICS ============
+    # Payments this month
+    payments_month = Payment.objects.filter(
+        payment_date__gte=first_day_month,
+        status='completed'
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    
+    # Total revenue (all time)
+    total_revenue = Payment.objects.filter(
+        status='completed'
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    
+    # Pending payments
+    pending_payments = Payment.objects.filter(
+        status='pending'
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    
+    # Sales revenue
+    sales_revenue = SalesPayment.objects.filter(
+        status='completed'
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    
+    # ============ MAINTENANCE STATISTICS ============
+    maintenance_qs = MaintenanceRequest.objects.all()
+    total_maintenance = maintenance_qs.count()
+    pending_maintenance = maintenance_qs.filter(status='pending').count()
+    in_progress_maintenance = maintenance_qs.filter(status='in_progress').count()
+    completed_maintenance = maintenance_qs.filter(status='completed').count()
+    urgent_maintenance = maintenance_qs.filter(priority='urgent', status__in=['pending', 'in_progress']).count()
+    
+    # Maintenance costs this month
+    maintenance_costs = maintenance_qs.filter(
+        request_date__gte=first_day_month,
+        estimated_cost__isnull=False
+    ).aggregate(total=Sum('estimated_cost'))['total'] or Decimal('0')
+    
+    # ============ CLIENTS & OWNERS ============
     total_clients = Client.objects.filter(is_active=True).count()
     total_owners = Owner.objects.filter(is_active=True).count()
+    new_clients_month = Client.objects.filter(created_at__gte=first_day_month).count()
     
-    # Sales stats
-    total_sales = SalesContract.objects.filter(status='active').count()
-    pending_reservations = PropertyReservation.objects.filter(status='pending').count()
+    # ============ SALES STATISTICS ============
+    sales_qs = SalesContract.objects.all()
+    total_sales = sales_qs.count()
+    active_sales = sales_qs.filter(status='active').count()
+    completed_sales = sales_qs.filter(status='completed').count()
     
-    # Recent data
-    recent_contracts = Contract.objects.select_related('property', 'client').order_by('-created_at')[:5]
-    recent_maintenance = MaintenanceRequest.objects.select_related('property').order_by('-request_date')[:5]
+    reservations_qs = PropertyReservation.objects.all()
+    pending_reservations = reservations_qs.filter(status='pending').count()
+    approved_reservations = reservations_qs.filter(status='approved').count()
     
-    # Chart data - Properties by type
-    property_types = Property.objects.values('property_type__name').annotate(count=Count('id')).order_by('-count')[:5]
-    chart_labels = [item['property_type__name'] or 'Unknown' for item in property_types]
-    chart_data = [item['count'] for item in property_types]
+    # ============ RECENT ACTIVITIES ============
+    recent_contracts = contracts_qs.select_related('property', 'client').order_by('-created_at')[:6]
+    recent_maintenance = maintenance_qs.select_related('property').order_by('-request_date')[:6]
+    recent_payments = Payment.objects.select_related('invoice').order_by('-payment_date')[:6]
+    
+    # ============ ALERTS & WARNINGS ============
+    contracts_expiring_7days = contracts_qs.filter(
+        status='active',
+        end_date__lte=today + timedelta(days=7),
+        end_date__gte=today
+    ).select_related('property', 'client')[:5]
+    
+    overdue_payments = Payment.objects.filter(
+        status='pending',
+        payment_date__lt=today
+    ).select_related('invoice')[:5]
+    
+    # ============ CHART DATA ============
+    # Properties by Type (Pie Chart)
+    chart_property_types_labels = [item['property_type__name'] or 'Other' for item in property_types_data]
+    chart_property_types_data = [item['count'] for item in property_types_data]
+    
+    # Properties by City (Bar Chart)
+    chart_cities_labels = [item['city'] or 'Unknown' for item in properties_by_city]
+    chart_cities_data = [item['count'] for item in properties_by_city]
+    
+    # Contracts Status (Doughnut Chart)
+    chart_contracts_labels = ['Active', 'Expired', 'Terminated']
+    chart_contracts_data = [
+        active_contracts,
+        expired_contracts,
+        contracts_qs.filter(status='terminated').count()
+    ]
+    
+    # Monthly Revenue Trend (Line Chart - Last 6 months)
+    revenue_trend_labels = []
+    revenue_trend_data = []
+    for i in range(5, -1, -1):
+        month_start = (today.replace(day=1) - timedelta(days=i*30)).replace(day=1)
+        month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        month_revenue = Payment.objects.filter(
+            payment_date__gte=month_start,
+            payment_date__lte=month_end,
+            status='completed'
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        revenue_trend_labels.append(month_start.strftime('%b %Y'))
+        revenue_trend_data.append(float(month_revenue))
+    
+    # ============ PERFORMANCE METRICS ============
+    occupancy_rate = (rented_properties / total_properties * 100) if total_properties > 0 else 0
+    avg_contract_duration = contracts_qs.filter(status='active').aggregate(
+        avg_days=Avg('duration_months')
+    )['avg_days'] or 0
     
     context = {
-        # Main stats
+        # Main Statistics
         'total_properties': total_properties,
         'available_properties': available_properties,
         'rented_properties': rented_properties,
-        'active_contracts': active_contracts,
+        'under_maintenance': under_maintenance,
+        'sold_properties': sold_properties,
+        'occupancy_rate': round(occupancy_rate, 1),
+        
         'total_contracts': total_contracts,
+        'active_contracts': active_contracts,
+        'expired_contracts': expired_contracts,
+        'expiring_soon': expiring_soon,
+        'new_contracts_month': new_contracts_month,
+        'avg_contract_duration': round(avg_contract_duration or 0, 1),
+        
+        'total_maintenance': total_maintenance,
         'pending_maintenance': pending_maintenance,
         'in_progress_maintenance': in_progress_maintenance,
+        'completed_maintenance': completed_maintenance,
+        'urgent_maintenance': urgent_maintenance,
+        'maintenance_costs': maintenance_costs,
+        
         'total_clients': total_clients,
         'total_owners': total_owners,
-        'total_sales': total_sales,
-        'pending_reservations': pending_reservations,
-        'unread_notifications': Notification.objects.filter(user=request.user, is_read=False).count(),
+        'new_clients_month': new_clients_month,
         
-        # Recent data
+        'total_sales': total_sales,
+        'active_sales': active_sales,
+        'completed_sales': completed_sales,
+        'pending_reservations': pending_reservations,
+        'approved_reservations': approved_reservations,
+        
+        # Financial
+        'total_revenue': total_revenue,
+        'payments_month': payments_month,
+        'pending_payments': pending_payments,
+        'sales_revenue': sales_revenue,
+        
+        # Recent Activities
         'recent_contracts': recent_contracts,
         'recent_maintenance': recent_maintenance,
+        'recent_payments': recent_payments,
         
-        # Chart data
-        'chart_labels': json.dumps(chart_labels),
-        'chart_data': json.dumps(chart_data),
+        # Alerts
+        'contracts_expiring_7days': contracts_expiring_7days,
+        'overdue_payments': overdue_payments,
+        
+        # Notifications
+        'unread_notifications': Notification.objects.filter(user=request.user, is_read=False).count(),
+        
+        # Chart Data (JSON)
+        'chart_property_types_labels': json.dumps(chart_property_types_labels),
+        'chart_property_types_data': json.dumps(chart_property_types_data),
+        'chart_cities_labels': json.dumps(chart_cities_labels),
+        'chart_cities_data': json.dumps(chart_cities_data),
+        'chart_contracts_labels': json.dumps(chart_contracts_labels),
+        'chart_contracts_data': json.dumps(chart_contracts_data),
+        'revenue_trend_labels': json.dumps(revenue_trend_labels),
+        'revenue_trend_data': json.dumps(revenue_trend_data),
     }
     
     return render(request, 'dashboard.html', context)
