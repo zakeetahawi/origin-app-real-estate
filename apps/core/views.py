@@ -170,9 +170,25 @@ def dashboard(request):
     
     # ============ PERFORMANCE METRICS ============
     occupancy_rate = (rented_properties / total_properties * 100) if total_properties > 0 else 0
-    avg_contract_duration = contracts_qs.filter(status='active').aggregate(
-        avg_days=Avg('duration_months')
-    )['avg_days'] or 0
+    
+    # Calculate average contract duration (in months) from start_date and end_date
+    from django.db.models import F, ExpressionWrapper, fields
+    active_contracts_with_duration = contracts_qs.filter(
+        status='active',
+        start_date__isnull=False,
+        end_date__isnull=False
+    )
+    
+    if active_contracts_with_duration.exists():
+        # Calculate duration for each contract and average
+        durations = []
+        for contract in active_contracts_with_duration:
+            duration_days = (contract.end_date - contract.start_date).days
+            duration_months = duration_days / 30.0  # Approximate months
+            durations.append(duration_months)
+        avg_contract_duration = sum(durations) / len(durations) if durations else 0
+    else:
+        avg_contract_duration = 0
     
     context = {
         # Main Statistics
