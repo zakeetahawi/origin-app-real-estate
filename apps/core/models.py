@@ -208,32 +208,205 @@ class SystemSetting(models.Model):
 
 class Notification(models.Model):
     """
-    User notifications.
+    Enhanced Notification system for in-app and email notifications.
     """
     NOTIFICATION_TYPES = [
-        ('info', _('Info')),
+        ('info', _('Information')),
         ('success', _('Success')),
         ('warning', _('Warning')),
         ('error', _('Error')),
+        ('contract_expiry', _('Contract Expiry')),
+        ('payment_due', _('Payment Due')),
+        ('maintenance_request', _('Maintenance Request')),
+        ('document_expiry', _('Document Expiry')),
+        ('budget_alert', _('Budget Alert')),
+        ('system', _('System Notification')),
     ]
-
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications', verbose_name=_('User'))
+    
+    PRIORITY_LEVELS = [
+        ('low', _('Low')),
+        ('medium', _('Medium')),
+        ('high', _('High')),
+        ('urgent', _('Urgent')),
+    ]
+    
+    # Recipients
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='notifications',
+        verbose_name=_('User')
+    )
+    
+    # Content
     title = models.CharField(_('Title'), max_length=200)
     message = models.TextField(_('Message'))
-    notification_type = models.CharField(_('Type'), max_length=20, choices=NOTIFICATION_TYPES, default='info')
+    notification_type = models.CharField(
+        _('Type'),
+        max_length=30,
+        choices=NOTIFICATION_TYPES,
+        default='info'
+    )
+    priority = models.CharField(
+        _('Priority'),
+        max_length=10,
+        choices=PRIORITY_LEVELS,
+        default='medium'
+    )
+    
+    # Related Object (Generic relation)
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True
+    )
+    object_id = models.PositiveIntegerField(null=True, blank=True)
+    content_object = GenericForeignKey('content_type', 'object_id')
+    
+    # Link & Actions
+    link = models.CharField(_('Link URL'), max_length=500, blank=True)
+    action_label = models.CharField(_('Action Label'), max_length=100, blank=True)
+    action_url = models.CharField(_('Action URL'), max_length=500, blank=True)
+    
+    # Status
     is_read = models.BooleanField(_('Read'), default=False)
-    link = models.CharField(_('Link'), max_length=500, blank=True)
+    read_at = models.DateTimeField(_('Read At'), null=True, blank=True)
+    is_sent_email = models.BooleanField(_('Email Sent'), default=False)
+    email_sent_at = models.DateTimeField(_('Email Sent At'), null=True, blank=True)
+    
+    # Scheduling
+    scheduled_for = models.DateTimeField(
+        _('Scheduled For'),
+        null=True,
+        blank=True,
+        help_text=_('Schedule notification for future delivery')
+    )
+    
+    # Metadata
+    metadata = models.JSONField(
+        _('Metadata'),
+        null=True,
+        blank=True,
+        help_text=_('Additional data as JSON')
+    )
+    
     created_at = models.DateTimeField(_('Created At'), auto_now_add=True)
 
     class Meta:
         verbose_name = _('Notification')
         verbose_name_plural = _('Notifications')
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'is_read', '-created_at']),
+            models.Index(fields=['notification_type']),
+            models.Index(fields=['priority']),
+        ]
 
     def __str__(self):
         return f"{self.user.username} - {self.title}"
-
+    
     def mark_as_read(self):
-        """Mark notification as read."""
-        self.is_read = True
-        self.save()
+        """Mark notification as read"""
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save()
+    
+    def send_email(self):
+        """Send notification via email"""
+        if not self.is_sent_email and self.user.email:
+            from django.core.mail import send_mail
+            from django.conf import settings
+            
+            try:
+                send_mail(
+                    subject=self.title,
+                    message=self.message,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[self.user.email],
+                    fail_silently=False,
+                )
+                self.is_sent_email = True
+                self.email_sent_at = timezone.now()
+                self.save()
+                return True
+            except Exception as e:
+                print(f"Failed to send email: {e}")
+                return False
+        return False
+
+
+class NotificationPreference(models.Model):
+    """
+    User preferences for notifications
+    """
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='notification_preferences',
+        verbose_name=_('User')
+    )
+    
+    # Email Preferences
+    email_enabled = models.BooleanField(_('Email Notifications'), default=True)
+    email_contract_expiry = models.BooleanField(_('Contract Expiry Emails'), default=True)
+    email_payment_due = models.BooleanField(_('Payment Due Emails'), default=True)
+    email_maintenance = models.BooleanField(_('Maintenance Emails'), default=True)
+    email_document_expiry = models.BooleanField(_('Document Expiry Emails'), default=True)
+    email_budget_alert = models.BooleanField(_('Budget Alert Emails'), default=True)
+    
+    # In-App Preferences
+    inapp_enabled = models.BooleanField(_('In-App Notifications'), default=True)
+    inapp_contract_expiry = models.BooleanField(_('Contract Expiry Notifications'), default=True)
+    inapp_payment_due = models.BooleanField(_('Payment Due Notifications'), default=True)
+    inapp_maintenance = models.BooleanField(_('Maintenance Notifications'), default=True)
+    inapp_document_expiry = models.BooleanField(_('Document Expiry Notifications'), default=True)
+    inapp_budget_alert = models.BooleanField(_('Budget Alert Notifications'), default=True)
+    
+    # Digest Settings
+    daily_digest = models.BooleanField(_('Daily Digest Email'), default=False)
+    weekly_digest = models.BooleanField(_('Weekly Digest Email'), default=True)
+    
+    # Quiet Hours
+    quiet_hours_start = models.TimeField(_('Quiet Hours Start'), null=True, blank=True)
+    quiet_hours_end = models.TimeField(_('Quiet Hours End'), null=True, blank=True)
+    
+    updated_at = models.DateTimeField(_('Updated At'), auto_now=True)
+    
+    class Meta:
+        verbose_name = _('Notification Preference')
+        verbose_name_plural = _('Notification Preferences')
+    
+    def __str__(self):
+        return f"Preferences for {self.user.username}"
+    
+    def should_send_email(self, notification_type):
+        """Check if email should be sent for this notification type"""
+        if not self.email_enabled:
+            return False
+        
+        type_mapping = {
+            'contract_expiry': self.email_contract_expiry,
+            'payment_due': self.email_payment_due,
+            'maintenance_request': self.email_maintenance,
+            'document_expiry': self.email_document_expiry,
+            'budget_alert': self.email_budget_alert,
+        }
+        
+        return type_mapping.get(notification_type, True)
+    
+    def should_show_inapp(self, notification_type):
+        """Check if in-app notification should be shown"""
+        if not self.inapp_enabled:
+            return False
+        
+        type_mapping = {
+            'contract_expiry': self.inapp_contract_expiry,
+            'payment_due': self.inapp_payment_due,
+            'maintenance_request': self.inapp_maintenance,
+            'document_expiry': self.inapp_document_expiry,
+            'budget_alert': self.inapp_budget_alert,
+        }
+        
+        return type_mapping.get(notification_type, True)

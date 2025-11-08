@@ -6,7 +6,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 from .models import (
     Permission, Role, UserProfile, AuditLog,
-    SystemSetting, Notification
+    SystemSetting, Notification, NotificationPreference
 )
 
 class UserProfileInline(admin.StackedInline):
@@ -74,7 +74,97 @@ class SystemSettingAdmin(admin.ModelAdmin):
 
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):
-    list_display = ['user', 'title', 'notification_type', 'is_read', 'created_at']
-    list_filter = ['notification_type', 'is_read', 'created_at']
-    search_fields = ['user__username', 'title', 'message']
-    readonly_fields = ['created_at']
+    list_display = ['user', 'title', 'notification_type', 'priority', 'is_read', 'is_sent_email', 'created_at']
+    list_filter = ['notification_type', 'priority', 'is_read', 'is_sent_email', 'created_at']
+    search_fields = ['user__username', 'user__email', 'title', 'message']
+    readonly_fields = ['created_at', 'read_at', 'email_sent_at']
+    list_select_related = ['user']
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('user', 'title', 'message')
+        }),
+        ('Type & Priority', {
+            'fields': ('notification_type', 'priority')
+        }),
+        ('Related Object', {
+            'fields': ('content_type', 'object_id'),
+            'classes': ('collapse',)
+        }),
+        ('Actions', {
+            'fields': ('link', 'action_label', 'action_url')
+        }),
+        ('Status', {
+            'fields': ('is_read', 'read_at', 'is_sent_email', 'email_sent_at')
+        }),
+        ('Scheduling', {
+            'fields': ('scheduled_for',),
+            'classes': ('collapse',)
+        }),
+        ('Metadata', {
+            'fields': ('metadata',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at',)
+        }),
+    )
+    
+    actions = ['mark_as_read', 'send_email_notifications']
+    
+    def mark_as_read(self, request, queryset):
+        count = 0
+        for notification in queryset:
+            if not notification.is_read:
+                notification.mark_as_read()
+                count += 1
+        self.message_user(request, f'{count} notifications marked as read.')
+    mark_as_read.short_description = 'Mark selected as read'
+    
+    def send_email_notifications(self, request, queryset):
+        count = 0
+        for notification in queryset:
+            if notification.send_email():
+                count += 1
+        self.message_user(request, f'{count} email notifications sent.')
+    send_email_notifications.short_description = 'Send email for selected'
+
+
+@admin.register(NotificationPreference)
+class NotificationPreferenceAdmin(admin.ModelAdmin):
+    list_display = ['user', 'email_enabled', 'inapp_enabled', 'daily_digest', 'weekly_digest']
+    list_filter = ['email_enabled', 'inapp_enabled', 'daily_digest', 'weekly_digest']
+    search_fields = ['user__username', 'user__email']
+    
+    fieldsets = (
+        ('User', {
+            'fields': ('user',)
+        }),
+        ('Email Notifications', {
+            'fields': (
+                'email_enabled',
+                'email_contract_expiry',
+                'email_payment_due',
+                'email_maintenance',
+                'email_document_expiry',
+                'email_budget_alert',
+            )
+        }),
+        ('In-App Notifications', {
+            'fields': (
+                'inapp_enabled',
+                'inapp_contract_expiry',
+                'inapp_payment_due',
+                'inapp_maintenance',
+                'inapp_document_expiry',
+                'inapp_budget_alert',
+            )
+        }),
+        ('Digest Settings', {
+            'fields': ('daily_digest', 'weekly_digest')
+        }),
+        ('Quiet Hours', {
+            'fields': ('quiet_hours_start', 'quiet_hours_end'),
+            'classes': ('collapse',)
+        }),
+    )
