@@ -236,8 +236,10 @@ def property_map(request):
         for prop in properties
     ]
 
+    import json
+    
     context = {
-        'property_markers': property_markers,
+        'property_markers': json.dumps(property_markers),
         'total_with_coordinates': properties.count(),
         'total_properties': Property.objects.count(),
     }
@@ -732,3 +734,267 @@ def property_status_toggle(request, pk):
         })
     
     return JsonResponse({'success': False}, status=400)
+
+
+# Advanced Views - Phase 2
+
+@login_required
+def property_gallery(request, pk):
+    """Professional image gallery view for a property."""
+    property_obj = get_object_or_404(Property, pk=pk)
+    images = property_obj.images.all().order_by('order', '-uploaded_at')
+    
+    # Primary image first
+    primary_image = images.filter(is_primary=True).first()
+    other_images = images.exclude(is_primary=True) if primary_image else images
+    
+    context = {
+        'property': property_obj,
+        'primary_image': primary_image,
+        'images': other_images,
+        'total_images': images.count(),
+    }
+    return render(request, 'properties/gallery.html', context)
+
+
+@login_required
+def property_financial_report(request, pk):
+    """Comprehensive financial report for a property."""
+    property_obj = get_object_or_404(Property, pk=pk)
+    
+    # Calculate date ranges
+    today = timezone.now().date()
+    current_year_start = today.replace(month=1, day=1)
+    last_year_start = current_year_start.replace(year=current_year_start.year - 1)
+    last_year_end = current_year_start - timedelta(days=1)
+    
+    # Current year financial data
+    current_year_revenues = PropertyRevenue.objects.filter(
+        property=property_obj,
+        revenue_date__gte=current_year_start
+    )
+    current_year_expenses = PropertyExpense.objects.filter(
+        property=property_obj,
+        expense_date__gte=current_year_start
+    )
+    
+    # Last year financial data
+    last_year_revenues = PropertyRevenue.objects.filter(
+        property=property_obj,
+        revenue_date__gte=last_year_start,
+        revenue_date__lte=last_year_end
+    )
+    last_year_expenses = PropertyExpense.objects.filter(
+        property=property_obj,
+        expense_date__gte=last_year_start,
+        expense_date__lte=last_year_end
+    )
+    
+    # All-time totals
+    total_revenue = PropertyRevenue.objects.filter(property=property_obj).aggregate(
+        total=Sum('amount')
+    )['total'] or 0
+    
+    total_expenses = PropertyExpense.objects.filter(property=property_obj).aggregate(
+        total=Sum('amount')
+    )['total'] or 0
+    
+    # Current year totals
+    current_year_revenue_total = current_year_revenues.aggregate(total=Sum('amount'))['total'] or 0
+    current_year_expense_total = current_year_expenses.aggregate(total=Sum('amount'))['total'] or 0
+    current_year_profit = current_year_revenue_total - current_year_expense_total
+    
+    # Last year totals
+    last_year_revenue_total = last_year_revenues.aggregate(total=Sum('amount'))['total'] or 0
+    last_year_expense_total = last_year_expenses.aggregate(total=Sum('amount'))['total'] or 0
+    last_year_profit = last_year_revenue_total - last_year_expense_total
+    
+    # ROI Calculation
+    investment = property_obj.purchase_price or property_obj.market_value or 0
+    if investment > 0:
+        current_roi = (current_year_profit / float(investment)) * 100
+        lifetime_roi = ((total_revenue - total_expenses) / float(investment)) * 100
+    else:
+        current_roi = 0
+        lifetime_roi = 0
+    
+    # Monthly breakdown for current year
+    monthly_data = []
+    for month in range(1, 13):
+        month_revenues = current_year_revenues.filter(
+            revenue_date__month=month
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        month_expenses = current_year_expenses.filter(
+            expense_date__month=month
+        ).aggregate(total=Sum('amount'))['total'] or 0
+        
+        monthly_data.append({
+            'month': month,
+            'revenue': float(month_revenues),
+            'expense': float(month_expenses),
+            'profit': float(month_revenues - month_expenses),
+        })
+    
+    # Expense breakdown by type
+    expense_by_type = PropertyExpense.objects.filter(
+        property=property_obj,
+        expense_date__gte=current_year_start
+    ).values('expense_type').annotate(
+        total=Sum('amount')
+    ).order_by('-total')
+    
+    # Revenue breakdown by type
+    revenue_by_type = PropertyRevenue.objects.filter(
+        property=property_obj,
+        revenue_date__gte=current_year_start
+    ).values('revenue_type').annotate(
+        total=Sum('amount')
+    ).order_by('-total')
+    
+    context = {
+        'property': property_obj,
+        'total_revenue': float(total_revenue),
+        'total_expenses': float(total_expenses),
+        'total_profit': float(total_revenue - total_expenses),
+        'current_year_revenue': float(current_year_revenue_total),
+        'current_year_expense': float(current_year_expense_total),
+        'current_year_profit': float(current_year_profit),
+        'last_year_revenue': float(last_year_revenue_total),
+        'last_year_expense': float(last_year_expense_total),
+        'last_year_profit': float(last_year_profit),
+        'current_roi': round(current_roi, 2),
+        'lifetime_roi': round(lifetime_roi, 2),
+        'monthly_data': monthly_data,
+        'expense_by_type': expense_by_type,
+        'revenue_by_type': revenue_by_type,
+        'current_year': today.year,
+        'last_year': today.year - 1,
+    }
+    return render(request, 'properties/financial_report.html', context)
+
+
+@login_required
+def property_comparison(request):
+    """Compare multiple properties side by side."""
+    # Get selected property IDs from GET parameters
+    property_ids = request.GET.getlist('properties')
+    
+    if property_ids:
+        properties = Property.objects.filter(pk__in=property_ids).select_related(
+            'property_type', 'owner'
+        )[:4]  # Limit to 4 properties for comparison
+    else:
+        properties = []
+    
+    # All properties for selection
+    all_properties = Property.objects.filter(is_active=True).select_related(
+        'property_type', 'owner'
+    ).order_by('code')
+    
+    context = {
+        'properties': properties,
+        'all_properties': all_properties,
+        'selected_ids': [int(pid) for pid in property_ids],
+    }
+    return render(request, 'properties/comparison.html', context)
+
+
+@login_required
+def property_occupancy_history(request, pk):
+    """View occupancy history and timeline for a property."""
+    property_obj = get_object_or_404(Property, pk=pk)
+    
+    # Get all contracts for this property
+    from apps.contracts.models import Contract
+    contracts = Contract.objects.filter(
+        property=property_obj
+    ).select_related('client').order_by('-start_date')
+    
+    # Calculate occupancy metrics
+    total_days = 0
+    occupied_days = 0
+    
+    for contract in contracts:
+        start = contract.start_date
+        end = contract.end_date or timezone.now().date()
+        duration = (end - start).days
+        total_days += duration
+        if contract.status in ['active', 'expired']:
+            occupied_days += duration
+    
+    if total_days > 0:
+        occupancy_rate = (occupied_days / total_days) * 100
+    else:
+        occupancy_rate = 0
+    
+    # Calculate vacancy periods
+    vacancy_periods = []
+    sorted_contracts = list(contracts.order_by('start_date'))
+    
+    for i, contract in enumerate(sorted_contracts):
+        if i < len(sorted_contracts) - 1:
+            next_contract = sorted_contracts[i + 1]
+            end_date = contract.end_date or timezone.now().date()
+            
+            if end_date < next_contract.start_date:
+                vacancy_days = (next_contract.start_date - end_date).days
+                vacancy_periods.append({
+                    'start': end_date,
+                    'end': next_contract.start_date,
+                    'days': vacancy_days,
+                })
+    
+    context = {
+        'property': property_obj,
+        'contracts': contracts,
+        'occupancy_rate': round(occupancy_rate, 2),
+        'total_contracts': contracts.count(),
+        'active_contracts': contracts.filter(status='active').count(),
+        'vacancy_periods': vacancy_periods,
+        'total_vacancy_days': sum(v['days'] for v in vacancy_periods),
+    }
+    return render(request, 'properties/occupancy_history.html', context)
+
+
+@login_required
+def property_maintenance_history(request, pk):
+    """Complete maintenance history for a property."""
+    property_obj = get_object_or_404(Property, pk=pk)
+    
+    from apps.maintenance.models import MaintenanceRequest
+    maintenance_requests = MaintenanceRequest.objects.filter(
+        property=property_obj
+    ).select_related('category', 'reported_by', 'assigned_to').order_by('-request_date')
+    
+    # Statistics
+    total_requests = maintenance_requests.count()
+    completed = maintenance_requests.filter(status='completed').count()
+    pending = maintenance_requests.filter(status='pending').count()
+    in_progress = maintenance_requests.filter(status='in_progress').count()
+    
+    total_cost = maintenance_requests.aggregate(
+        estimated=Sum('estimated_cost'),
+        actual=Sum('actual_cost')
+    )
+    
+    # Cost by category
+    cost_by_category = maintenance_requests.values(
+        'category__name'
+    ).annotate(
+        total=Sum('actual_cost')
+    ).order_by('-total')
+    
+    context = {
+        'property': property_obj,
+        'maintenance_requests': maintenance_requests[:20],  # Latest 20
+        'total_requests': total_requests,
+        'completed_count': completed,
+        'pending_count': pending,
+        'in_progress_count': in_progress,
+        'completion_rate': round((completed / total_requests * 100), 2) if total_requests > 0 else 0,
+        'total_estimated_cost': total_cost['estimated'] or 0,
+        'total_actual_cost': total_cost['actual'] or 0,
+        'cost_by_category': cost_by_category,
+    }
+    return render(request, 'properties/maintenance_history.html', context)

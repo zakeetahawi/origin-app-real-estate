@@ -57,4 +57,11 @@ urlpatterns = [
     
     # AJAX/API
     path('<int:pk>/toggle-status/', views.property_status_toggle, name='toggle_status'),
+    
+    # Advanced Views - Phase 2
+    path('<int:pk>/gallery/', views.property_gallery, name='gallery'),
+    path('<int:pk>/financial-report/', views.property_financial_report, name='financial_report'),
+    path('compare/', views.property_comparison, name='comparison'),
+    path('<int:pk>/occupancy-history/', views.property_occupancy_history, name='occupancy_history'),
+    path('<int:pk>/maintenance-history/', views.property_maintenance_history, name='maintenance_history'),
 ]

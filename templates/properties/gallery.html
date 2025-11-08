@@ -1,0 +1,253 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Gallery" %} - {{ property.code }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/photoswipe/5.3.7/photoswipe.min.css">
+<style>
+    .gallery-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1rem;
+        margin-top: 1.5rem;
+    }
+    
+    .gallery-item {
+        position: relative;
+        overflow: hidden;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+        cursor: pointer;
+        background: #f8f9fa;
+        aspect-ratio: 4/3;
+    }
+    
+    .gallery-item:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+    }
+    
+    .gallery-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.3s ease;
+    }
+    
+    .gallery-item:hover img {
+        transform: scale(1.1);
+    }
+    
+    .gallery-item-overlay {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+        color: white;
+        padding: 1rem;
+        transform: translateY(100%);
+        transition: transform 0.3s ease;
+    }
+    
+    .gallery-item:hover .gallery-item-overlay {
+        transform: translateY(0);
+    }
+    
+    .primary-badge {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: #fbbf24;
+        color: #1f2937;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        z-index: 1;
+    }
+    
+    .empty-gallery {
+        text-align: center;
+        padding: 4rem 2rem;
+        background: #f8f9fa;
+        border-radius: 10px;
+        border: 2px dashed #dee2e6;
+    }
+    
+    .empty-gallery i {
+        font-size: 4rem;
+        color: #adb5bd;
+        margin-bottom: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1">
+                <i class="fas fa-images text-primary"></i>
+                {% trans "Property Gallery" %}
+            </h1>
+            <p class="text-muted mb-0">
+                {{ property.code }} - {{ property.title }}
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'properties:detail' property.pk %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> {% trans "Back to Property" %}
+            </a>
+            <a href="{% url 'properties:image_upload' property.pk %}" class="btn btn-primary">
+                <i class="fas fa-upload"></i> {% trans "Upload Images" %}
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+        <div class="alert-container">
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <!-- Statistics Card -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h3 class="mb-0">{{ total_images }}</h3>
+                    <small class="text-muted">{% trans "Total Images" %}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h3 class="mb-0">{% if primary_image %}1{% else %}0{% endif %}</h3>
+                    <small class="text-muted">{% trans "Primary Image" %}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h6 class="mb-2">
+                        <i class="fas fa-info-circle"></i> {% trans "Gallery Tips" %}
+                    </h6>
+                    <small>{% trans "Click any image to view in full screen. Drag to reorder images." %}</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Primary Image Section -->
+    {% if primary_image %}
+    <div class="mb-4">
+        <h5 class="mb-3">
+            <i class="fas fa-star text-warning"></i> {% trans "Primary Image" %}
+        </h5>
+        <div class="card">
+            <div class="row g-0">
+                <div class="col-md-8">
+                    <img src="{{ primary_image.image.url }}" class="img-fluid w-100" alt="{{ primary_image.title }}" style="max-height: 500px; object-fit: cover;">
+                </div>
+                <div class="col-md-4">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ primary_image.title|default:property.title }}</h5>
+                        <p class="card-text text-muted">{{ primary_image.caption }}</p>
+                        {% if primary_image.description %}
+                        <p class="card-text">
+                            <small>{{ primary_image.description }}</small>
+                        </p>
+                        {% endif %}
+                        <hr>
+                        <small class="text-muted">
+                            <i class="fas fa-calendar"></i> 
+                            {{ primary_image.uploaded_at|date:"M d, Y" }}
+                        </small>
+                        <div class="mt-3">
+                            <form method="post" action="{% url 'properties:image_delete' primary_image.pk %}" class="d-inline">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('{% trans "Are you sure?" %}')">
+                                    <i class="fas fa-trash"></i> {% trans "Delete" %}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Gallery Grid -->
+    {% if images %}
+    <div class="mb-4">
+        <h5 class="mb-3">
+            <i class="fas fa-images"></i> {% trans "All Images" %}
+        </h5>
+        
+        <div class="gallery-grid pswp-gallery" id="property-gallery">
+            {% for image in images %}
+            <a href="{{ image.image.url }}" 
+               class="gallery-item"
+               data-pswp-width="{{ image.image.width|default:1200 }}" 
+               data-pswp-height="{{ image.image.height|default:800 }}"
+               data-pswp-caption="{{ image.title|default:property.title }} - {{ image.caption }}">
+                {% if image.is_primary %}
+                <span class="primary-badge">
+                    <i class="fas fa-star"></i> Primary
+                </span>
+                {% endif %}
+                <img src="{{ image.image.url }}" alt="{{ image.title }}" loading="lazy">
+                <div class="gallery-item-overlay">
+                    <h6 class="mb-1">{{ image.title|default:"Untitled"|truncatewords:5 }}</h6>
+                    {% if image.caption %}
+                    <small>{{ image.caption|truncatewords:10 }}</small>
+                    {% endif %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-gallery">
+        <i class="fas fa-images"></i>
+        <h4>{% trans "No Images Yet" %}</h4>
+        <p class="text-muted">{% trans "Upload images to create a beautiful gallery for this property." %}</p>
+        <a href="{% url 'properties:image_upload' property.pk %}" class="btn btn-primary mt-3">
+            <i class="fas fa-upload"></i> {% trans "Upload First Image" %}
+        </a>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/photoswipe/5.3.7/photoswipe.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/photoswipe/5.3.7/photoswipe-lightbox.umd.min.js"></script>
+<script>
+    // Initialize PhotoSwipe Lightbox
+    const lightbox = new PhotoSwipeLightbox({
+        gallery: '#property-gallery',
+        children: 'a',
+        pswpModule: PhotoSwipe,
+        padding: { top: 50, bottom: 50, left: 100, right: 100 },
+        bgOpacity: 0.9,
+        showHideAnimationType: 'zoom',
+    });
+    
+    lightbox.init();
+</script>
+{% endblock %}
