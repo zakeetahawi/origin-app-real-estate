@@ -280,3 +280,9 @@ SWAGGER_SETTINGS = {
     'LOGIN_URL': '/admin/login/',
     'LOGOUT_URL': '/admin/logout/',
 }
+
+# Authentication Settings
+LOGIN_URL = 'core:login'
+LOGIN_REDIRECT_URL = 'core:dashboard'
+LOGOUT_REDIRECT_URL = 'core:login'
+
